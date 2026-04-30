@@ -78,7 +78,7 @@ jobs:
 
       - name: Install Python and uv
         run: |
-          dnf install -y python3.12 python3.12-pip python3.12-devel
+          dnf install -y python3.12 python3.12-pip python3.12-devel diffutils
           python3.12 -m pip install -e ".[dev]"
 
       - name: Verify agent lock file
