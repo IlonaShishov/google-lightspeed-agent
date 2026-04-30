@@ -77,12 +77,12 @@ lock-check:
 	@echo "Checking if lock files are in sync with pyproject.toml..."
 	@source .venv/bin/activate && uv pip compile --generate-hashes --python-version=3.12 --python-platform=linux \
 		--extra agent --output-file=/tmp/requirements-agent-check.txt pyproject.toml
-	@diff requirements-agent.txt /tmp/requirements-agent-check.txt || \
+	@diff <(tail -n +3 requirements-agent.txt) <(tail -n +3 /tmp/requirements-agent-check.txt) || \
 		(echo "ERROR: requirements-agent.txt is out of sync. Run 'make lock' to update." && rm -f /tmp/requirements-agent-check.txt && exit 1)
 	@rm -f /tmp/requirements-agent-check.txt
 	@source .venv/bin/activate && uv pip compile --generate-hashes --python-version=3.12 --python-platform=linux \
 		--output-file=/tmp/requirements-handler-check.txt pyproject.toml
-	@diff requirements-handler.txt /tmp/requirements-handler-check.txt || \
+	@diff <(tail -n +3 requirements-handler.txt) <(tail -n +3 /tmp/requirements-handler-check.txt) || \
 		(echo "ERROR: requirements-handler.txt is out of sync. Run 'make lock' to update." && rm -f /tmp/requirements-handler-check.txt && exit 1)
 	@rm -f /tmp/requirements-handler-check.txt
 	@echo "✓ Lock files are in sync"
