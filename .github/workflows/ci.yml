@@ -100,7 +100,8 @@ jobs:
     needs: [konflux-verify, lock-file-check]
     if: >-
       !cancelled() &&
-      (needs.konflux-verify.result == 'success' || needs.konflux-verify.result == 'skipped')
+      (needs.konflux-verify.result == 'success' || needs.konflux-verify.result == 'skipped') &&
+      needs.lock-file-check.result == 'success'
     runs-on: ubuntu-latest
     container:
       image: quay.io/centos/centos:stream9
@@ -126,7 +127,8 @@ jobs:
     needs: [konflux-verify, lock-file-check]
     if: >-
       !cancelled() &&
-      (needs.konflux-verify.result == 'success' || needs.konflux-verify.result == 'skipped')
+      (needs.konflux-verify.result == 'success' || needs.konflux-verify.result == 'skipped') &&
+      needs.lock-file-check.result == 'success'
     runs-on: ubuntu-latest
     container:
       image: quay.io/centos/centos:stream9
@@ -149,7 +151,8 @@ jobs:
     needs: [konflux-verify, lock-file-check]
     if: >-
       !cancelled() &&
-      (needs.konflux-verify.result == 'success' || needs.konflux-verify.result == 'skipped')
+      (needs.konflux-verify.result == 'success' || needs.konflux-verify.result == 'skipped') &&
+      needs.lock-file-check.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
