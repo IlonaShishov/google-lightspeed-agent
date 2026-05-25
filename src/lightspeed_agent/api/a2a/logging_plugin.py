@@ -67,7 +67,7 @@ class AgentLoggingPlugin(BasePlugin):
         logger.info(
             "Agent run started (event_type=agent_run_started, invocation_id=%s, agent=%s, %s)",
             invocation_context.invocation_id,
-            invocation_context.agent.name,
+            invocation_context.agent.name if invocation_context.agent else "unknown",
             self._audit_fields(),
         )
         return None
