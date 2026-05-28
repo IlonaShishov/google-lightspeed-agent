@@ -198,6 +198,8 @@ Each enabled LB creates the following resources (all prefixed with `LB_NAME` and
 | `HANDLER_DOMAIN_NAME` | (required when handler LB enabled) | Domain for the handler's Google-managed SSL certificate (e.g., `dcr.example.com`) |
 | `ENABLE_CLOUD_ARMOR_AGENT` | `false` | Enable Cloud Armor WAF for the agent LB (requires `ENABLE_LB_AGENT=true`) |
 | `ENABLE_CLOUD_ARMOR_HANDLER` | `false` | Enable Cloud Armor WAF for the handler LB (requires `ENABLE_LB_HANDLER=true`) |
+| `CLOUD_ARMOR_SENSITIVITY_AGENT` | `1` | OWASP CRS sensitivity level for the agent WAF policy (1-4). Level 1 is recommended for the agent because its A2A payloads contain free-form user text that can trigger false positives at higher sensitivities. |
+| `CLOUD_ARMOR_SENSITIVITY_HANDLER` | `2` | OWASP CRS sensitivity level for the handler WAF policy (1-4). Level 2 is suitable because the handler only receives structured DCR JSON from Gemini Enterprise. |
 | `LB_NAME` | `lightspeed-lb` | Prefix for all load balancer resource names |
 
 ### DNS Setup
@@ -291,14 +293,53 @@ Each security policy includes the following OWASP ModSecurity CRS rules, each co
 
 | Priority | Rule | OWASP Category | What It Blocks |
 |----------|------|----------------|----------------|
-| 1000 | `sqli-v33-stable` | A03:2021 Injection | SQL injection attempts in query parameters, headers, and request body. Detects patterns like `' OR 1=1`, `UNION SELECT`, and encoded variants. |
-| 1100 | `xss-v33-stable` | A03:2021 Injection | Cross-site scripting via `<script>` tags, event handlers (`onerror`, `onload`), and JavaScript URIs in request parameters and headers. |
-| 1200 | `lfi-v33-stable` | A01:2021 Broken Access Control | Local file inclusion via path traversal (`../../etc/passwd`, `..%2f..%2f`). Prevents attackers from reading files on the server filesystem. |
-| 1300 | `rfi-v33-stable` | A01:2021 Broken Access Control | Remote file inclusion via URL parameters pointing to external resources (`http://evil.com/shell.php`). Blocks attempts to load and execute remote code. |
-| 1400 | `rce-v33-stable` | A03:2021 Injection | OS command injection attempts (`; rm -rf /`, backtick execution, pipe chains). Prevents arbitrary command execution on the server. |
-| 1500 | `scannerdetection-v33-stable` | Reconnaissance | Detects and blocks automated vulnerability scanners, web crawlers, and attack tools by matching known scanner signatures in User-Agent headers and request patterns. |
-| 1600 | `protocolattack-v33-stable` | A05:2021 Security Misconfiguration | HTTP request smuggling, response splitting (`\r\n` injection), and protocol-level attacks that exploit differences between proxy and backend HTTP parsing. |
-| 1700 | `sessionfixation-v33-stable` | A07:2021 Identification and Authentication Failures | Session fixation attacks where an attacker sets a known session ID via URL parameters or cookies, then waits for the victim to authenticate with that session. |
+| 900 | `methodenforcement-v422-stable` | A05:2021 Security Misconfiguration | Blocks unexpected HTTP methods (DELETE, PUT, TRACE, OPTIONS, etc.). Both services only use POST (JSON-RPC, DCR) and GET (health, agent card). |
+| 1000 | `sqli-v422-stable` | A03:2021 Injection | SQL injection attempts in query parameters, headers, and request body. Detects patterns like `' OR 1=1`, `UNION SELECT`, and encoded variants. |
+| 1100 | `xss-v422-stable` | A03:2021 Injection | Cross-site scripting via `<script>` tags, event handlers (`onerror`, `onload`), and JavaScript URIs in request parameters and headers. |
+| 1200 | `lfi-v422-stable` | A01:2021 Broken Access Control | Local file inclusion via path traversal (`../../etc/passwd`, `..%2f..%2f`). Prevents attackers from reading files on the server filesystem. |
+| 1300 | `rfi-v422-stable` | A01:2021 Broken Access Control | Remote file inclusion via URL parameters pointing to external resources (`http://evil.com/shell.php`). Blocks attempts to load and execute remote code. |
+| 1400 | `rce-v422-stable` | A03:2021 Injection | OS command injection attempts (`; rm -rf /`, backtick execution, pipe chains). Prevents arbitrary command execution on the server. |
+| 1500 | `scannerdetection-v422-stable` | Reconnaissance | Detects and blocks automated vulnerability scanners, web crawlers, and attack tools by matching known scanner signatures in User-Agent headers and request patterns. |
+| 1600 | `protocolattack-v422-stable` | A05:2021 Security Misconfiguration | HTTP request smuggling, response splitting (`\r\n` injection), and protocol-level attacks that exploit differences between proxy and backend HTTP parsing. |
+| 1700 | `sessionfixation-v422-stable` | A07:2021 Identification and Authentication Failures | Session fixation attacks where an attacker sets a known session ID via URL parameters or cookies, then waits for the victim to authenticate with that session. |
+| 1800 | `cve-canary` | Emerging Threats | Rapidly-updated signatures for critical CVEs (e.g., Log4Shell, Spring4Shell). Google updates these rules as new CVEs are disclosed, providing early protection before application patches are deployed. |
+
+All rules use `evaluatePreconfiguredWaf()` with configurable sensitivity levels (1-4). The agent defaults to sensitivity 1 (`CLOUD_ARMOR_SENSITIVITY_AGENT`) because its A2A payloads contain free-form user text that can trigger false positives at higher sensitivities. The handler defaults to sensitivity 2 (`CLOUD_ARMOR_SENSITIVITY_HANDLER`) because it only receives structured DCR JSON from Gemini Enterprise. JSON parsing is enabled on each security policy (`--json-parsing=STANDARD`) for accurate inspection of JSON-RPC and DCR request bodies. Request body inspection is set to 64kB (`--request-body-inspection-size=64kB`), the maximum, to cover large A2A conversation payloads. Verbose logging is enabled (`--log-level=VERBOSE`) for detailed visibility into WAF decisions, useful for debugging false positives and tuning rules.
+
+#### Preview Mode (Recommended for Initial Deployment)
+
+Cloud Armor rules are deployed in **enforce mode** (`deny-403`) by default — matching requests are blocked immediately. [Google recommends](https://docs.cloud.google.com/armor/docs/best-practices) deploying WAF rules in **preview mode** first to observe what they would block without actually blocking traffic, then switching to enforce mode after tuning.
+
+This is especially important for the **agent service**, where free-form A2A JSON-RPC payloads may contain SQL-like text, HTML fragments, or code snippets that trigger false positives on SQLi (`sqli`) or XSS (`xss`) rules. False positives from Cloud Armor are silent from the application's perspective — blocked requests never reach the app and produce no application-level logs, only Cloud Armor logs in Cloud Logging.
+
+To switch individual rules to preview mode after deployment:
+
+```bash
+# Put the SQLi rule into preview mode on the agent policy (log only, do not block)
+gcloud compute security-policies rules update 1000 \
+  --security-policy="${LB_NAME:-lightspeed-lb}-agent-security-policy" \
+  --action=deny-403 \
+  --preview \
+  --global --project=$GOOGLE_CLOUD_PROJECT
+```
+
+To re-enable enforcement after tuning:
+
+```bash
+gcloud compute security-policies rules update 1000 \
+  --security-policy="${LB_NAME:-lightspeed-lb}-agent-security-policy" \
+  --action=deny-403 \
+  --no-preview \
+  --global --project=$GOOGLE_CLOUD_PROJECT
+```
+
+**Recommended rollout procedure:**
+
+1. Deploy with rules in enforce mode (the default)
+2. Immediately switch agent SQLi and XSS rules (priorities 1000, 1100) to preview mode
+3. Monitor Cloud Armor logs for false positives (see [Viewing Blocked Requests](#viewing-blocked-requests))
+4. After 24–48 hours with no false positives, re-enable enforcement with `--no-preview`
+5. Repeat for any other rules that show false positive activity
 
 #### Checking Policy Status
 
@@ -326,7 +367,7 @@ gcloud logging read 'resource.type="http_load_balancer" AND jsonPayload.enforced
 
 You can add, remove, or modify rules after deployment. Specify the per-service policy name.
 
-> **Note:** Priorities 1000–1700 are used by the preconfigured WAF rules. Custom rules should use priorities below 1000 or above 1700.
+> **Note:** Priorities 900–1800 are used by the preconfigured WAF rules. Custom rules should use priorities below 900 or above 1800.
 
 ```bash
 # Remove a rule from the agent policy (e.g., scanner detection)
@@ -342,12 +383,33 @@ gcloud compute security-policies rules update 1000 \
   --global --project=$GOOGLE_CLOUD_PROJECT
 
 # Add a custom IP deny rule to the agent policy
-gcloud compute security-policies rules create 900 \
+gcloud compute security-policies rules create 800 \
   --security-policy="${LB_NAME:-lightspeed-lb}-agent-security-policy" \
   --src-ip-ranges="203.0.113.0/24" \
   --action=deny-403 \
   --global --project=$GOOGLE_CLOUD_PROJECT
 ```
+
+#### Field-Level Exclusions (Reducing False Positives)
+
+The agent service processes free-form A2A JSON-RPC payloads where users may ask about SQL queries, paste HTML/code, or discuss file paths. These can trigger SQLi, XSS, or LFI rules as false positives. Use [field-level exclusions](https://docs.cloud.google.com/armor/docs/rule-tuning) to exclude specific request fields from WAF inspection while keeping protection for other fields.
+
+Exclusions are configured per rule per policy. To identify which fields trigger false positives, enable verbose logging (already configured) and check Cloud Armor logs:
+
+```bash
+# View recent blocks with request details
+gcloud logging read 'resource.type="http_load_balancer" AND jsonPayload.enforcedSecurityPolicy.outcome="DENY"' \
+  --project=$GOOGLE_CLOUD_PROJECT --limit=10 \
+  --format='json(timestamp, jsonPayload.enforcedSecurityPolicy.matchedRule, jsonPayload.enforcedSecurityPolicy.matchedFieldType, jsonPayload.enforcedSecurityPolicy.matchedFieldValue)'
+
+# Exclude a specific request header from SQLi inspection on the agent policy
+gcloud compute security-policies rules update 1000 \
+  --security-policy="${LB_NAME:-lightspeed-lb}-agent-security-policy" \
+  --request-header-to-exclude="Authorization" \
+  --global --project=$GOOGLE_CLOUD_PROJECT
+```
+
+> **Tip:** Start with verbose logging and preview mode on the agent's SQLi and XSS rules (priorities 1000, 1100) to identify false positives before adding exclusions. See [Preview Mode](#preview-mode-recommended-for-initial-deployment).
 
 #### Pricing
 
