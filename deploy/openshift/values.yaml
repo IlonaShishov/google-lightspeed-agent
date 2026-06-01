@@ -319,22 +319,23 @@ secrets:
   googleCloudProject: ""
   redHatSsoClientId: ""
   redHatSsoClientSecret: ""
-  sessionDbPassword: "CHANGE_ME_sessions_password"
-  # Full connection URL (contains credentials, stored in the Secret).
-  # Only needed when postgresql.sessionBackend=database.
-  sessionDatabaseUrl: "postgresql+asyncpg://sessions:CHANGE_ME_sessions_password@lightspeed-agent-postgresql:5432/agent_sessions"
+  sessionDbPassword: ""
+  # Session database connection URL. Auto-generated from release name when empty.
+  # Override only if using an external database.
+  sessionDatabaseUrl: ""
   # --- Marketplace database ---
-  marketplaceDbPassword: "CHANGE_ME_marketplace_password"
-  # Marketplace database URL — separate PostgreSQL instance with its own credentials.
-  databaseUrl: "postgresql+asyncpg://marketplace:CHANGE_ME_marketplace_password@lightspeed-agent-marketplace-postgresql:5432/marketplace"
+  marketplaceDbPassword: ""
+  # Marketplace database connection URL. Auto-generated from release name when empty.
+  # Override only if using an external database.
+  databaseUrl: ""
   # Redis password for rate limiting backend
-  redisPassword: "CHANGE_ME_redis_password"
+  redisPassword: ""
   # Fernet key for encrypting stored client secrets
   dcrEncryptionKey: ""
   # GMA SSO API credentials for DCR tenant creation (handler only)
   gmaClientId: ""
   gmaClientSecret: ""
-  # Base64-encoded GCP service account key JSON (for ADC outside Cloud Run)
+  # Plain-text GCP service account key JSON (for ADC outside Cloud Run)
   gcpServiceAccountKey: ""
   # API key for non-Google LLM providers (litellm only)
   llmApiKey: ""

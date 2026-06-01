@@ -40,10 +40,9 @@ spec:
                   key: REDIS_PASSWORD
           args:
             - "redis-server"
+            - "/etc/redis/redis.conf"
             - "--appendonly"
             - "yes"
-            - "--requirepass"
-            - "$(REDIS_PASSWORD)"
             - "--dir"
             - "/data"
           ports:
@@ -52,6 +51,9 @@ spec:
           volumeMounts:
             - name: redis-data
               mountPath: /data
+            - name: redis-config
+              mountPath: /etc/redis
+              readOnly: true
           resources:
             {{- toYaml .Values.redis.resources | nindent 12 }}
           readinessProbe:
@@ -74,6 +76,12 @@ spec:
         - name: redis-data
           persistentVolumeClaim:
             claimName: {{ include "lightspeed-agent.fullname" . }}-redis-data
+        - name: redis-config
+          secret:
+            secretName: {{ include "lightspeed-agent.fullname" . }}-secrets
+            items:
+              - key: REDIS_CONF
+                path: redis.conf
 ---
 apiVersion: v1
 kind: Service

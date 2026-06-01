@@ -29,6 +29,7 @@ spec:
           imagePullPolicy: {{ .Values.marketplacePostgresql.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
@@ -54,6 +55,10 @@ spec:
           volumeMounts:
             - name: postgresql-data
               mountPath: /var/lib/pgsql/data
+            - name: tmp
+              mountPath: /tmp
+            - name: run-postgresql
+              mountPath: /var/run/postgresql
           resources:
             {{- toYaml .Values.marketplacePostgresql.resources | nindent 12 }}
           startupProbe:
@@ -80,6 +85,10 @@ spec:
         - name: postgresql-data
           persistentVolumeClaim:
             claimName: {{ include "lightspeed-agent.fullname" . }}-marketplace-postgresql-data
+        - name: tmp
+          emptyDir: {}
+        - name: run-postgresql
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

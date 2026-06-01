@@ -41,6 +41,9 @@ spec:
             - containerPort: {{ .Values.agent.port }}
               protocol: TCP
               name: http
+            - containerPort: {{ .Values.agent.probePort }}
+              protocol: TCP
+              name: probe
           envFrom:
             - configMapRef:
                 name: {{ include "lightspeed-agent.fullname" . }}-config
