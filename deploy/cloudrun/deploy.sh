@@ -32,7 +32,7 @@
 #   │  (Cloud Run #1)         │     │    (Cloud Run #2)       │
 #   │                         │     │                         │
 #   │  - POST /dcr            │     │  - POST / (A2A)         │
-#   │  - Pub/Sub push         │     │  - /.well-known/agent   │
+#   │  - POST /pubsub (OIDC)  │     │  - /.well-known/agent   │
 #   │  - Account approval     │     │  - OAuth flow           │
 #   │  - GMA SSO API          │     │  - MCP sidecar          │
 #   └─────────────────────────┘     └─────────────────────────┘
@@ -322,7 +322,7 @@ configure_pubsub_push() {
         return
     fi
 
-    local push_endpoint="${handler_url}/dcr"
+    local push_endpoint="${handler_url}/pubsub"
 
     # Grant the Pub/Sub Invoker SA permission to invoke the marketplace-handler.
     # This is a service-level binding (not project-level), following least privilege.
@@ -350,6 +350,7 @@ configure_pubsub_push() {
         gcloud pubsub subscriptions update "$PUBSUB_SUBSCRIPTION" \
             --push-endpoint="$push_endpoint" \
             --push-auth-service-account="$PUBSUB_INVOKER_SA" \
+            --push-auth-token-audience="$push_endpoint" \
             --ack-deadline=60 \
             --project="$PROJECT_ID" \
             --quiet
@@ -360,14 +361,24 @@ configure_pubsub_push() {
             --topic="$PUBSUB_TOPIC" \
             --push-endpoint="$push_endpoint" \
             --push-auth-service-account="$PUBSUB_INVOKER_SA" \
+            --push-auth-token-audience="$push_endpoint" \
             --ack-deadline=60 \
             --project="$PROJECT_ID" \
             $impersonate_flag
     fi
 
+    # Update the handler's PUBSUB_AUDIENCE to match the subscription's audience
+    log_info "Setting PUBSUB_AUDIENCE=$push_endpoint on $HANDLER_SERVICE_NAME..."
+    gcloud run services update "$HANDLER_SERVICE_NAME" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --update-env-vars="PUBSUB_AUDIENCE=${push_endpoint}" \
+        --quiet 2>&1 | grep -v "Deploying\|Creating\|Routing" || true
+
     log_info "Pub/Sub push subscription configured:"
     log_info "  Subscription: $PUBSUB_SUBSCRIPTION"
     log_info "  Push endpoint: $push_endpoint"
+    log_info "  Audience: $push_endpoint"
     log_info "  Auth SA: $PUBSUB_INVOKER_SA"
 }
 
