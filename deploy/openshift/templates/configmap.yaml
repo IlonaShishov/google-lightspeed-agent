@@ -75,6 +75,7 @@ data:
   # Database Pool Configuration (applies to both session and marketplace databases)
   DATABASE_POOL_SIZE: {{ .Values.postgresql.poolSize | quote }}
   DATABASE_POOL_MAX_OVERFLOW: {{ .Values.postgresql.poolMaxOverflow | quote }}
+  DATABASE_REQUIRE_SSL: {{ .Values.postgresql.requireSsl | quote }}
 
   # Rate Limiting Configuration
   REDIS_SERVICE_HOST: {{ printf "%s-redis" (include "lightspeed-agent.fullname" .) | quote }}
@@ -93,6 +94,7 @@ data:
   HANDLER_HOST: {{ .Values.handler.host | quote }}
   HANDLER_PORT: {{ .Values.handler.port | quote }}
   HANDLER_PROBE_PORT: {{ .Values.handler.probePort | quote }}
+  PUBSUB_AUDIENCE: {{ .Values.handler.pubsubAudience | quote }}
   DCR_CLIENT_NAME_PREFIX: {{ .Values.handler.dcr.clientNamePrefix | quote }}
   SERVICE_CONTROL_SERVICE_NAME: {{ .Values.handler.serviceControlServiceName | quote }}
   GMA_API_BASE_URL: {{ .Values.handler.gma.apiBaseUrl | quote }}
@@ -105,6 +107,7 @@ data:
   SKIP_JWT_VALIDATION: {{ .Values.auth.skipJwtValidation | quote }}
   SKIP_ORDER_VALIDATION: {{ .Values.auth.skipOrderValidation | quote }}
   SKIP_DCR_JWT_VALIDATION: {{ .Values.auth.skipDcrJwtValidation | quote }}
+  SKIP_PUBSUB_OIDC_VERIFICATION: {{ .Values.auth.skipPubsubOidcVerification | quote }}
 
   # CORS
   {{- if .Values.auth.corsAllowedOrigins }}

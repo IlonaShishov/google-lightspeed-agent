@@ -121,6 +121,7 @@ class TestPubSubOIDCVerification:
         ) as mock_settings:
             settings = MagicMock()
             settings.pubsub_audience = "https://my-service.run.app"
+            settings.skip_pubsub_oidc_verification = False
             settings.service_control_service_name = ""
             mock_settings.return_value = settings
 
@@ -132,6 +133,44 @@ class TestPubSubOIDCVerification:
 
         _, kwargs = mock_verify.call_args
         assert kwargs.get("audience") == "https://my-service.run.app"
+
+
+# ---------------------------------------------------------------------------
+# 1b. Pub/Sub OIDC Skip (standalone mode)
+# ---------------------------------------------------------------------------
+
+class TestPubSubOIDCSkip:
+    """Tests for SKIP_PUBSUB_OIDC_VERIFICATION in standalone/dev deployments."""
+
+    @patch(
+        "lightspeed_agent.marketplace.router.get_procurement_service",
+    )
+    def test_pubsub_accepts_without_oidc_when_skipped(
+        self, mock_get_svc, marketplace_client
+    ):
+        """POST /pubsub without OIDC token succeeds when verification is skipped."""
+        mock_svc = MagicMock()
+        mock_svc.process_event = AsyncMock()
+        mock_get_svc.return_value = mock_svc
+
+        with patch(
+            "lightspeed_agent.marketplace.router.get_settings"
+        ) as mock_settings:
+            settings = MagicMock()
+            settings.skip_pubsub_oidc_verification = True
+            settings.service_control_service_name = ""
+            mock_settings.return_value = settings
+
+            resp = marketplace_client.post("/pubsub", json=_pubsub_body())
+
+        assert resp.status_code == 200
+
+    def test_pubsub_still_rejects_without_oidc_when_not_skipped(
+        self, marketplace_client
+    ):
+        """POST /pubsub without OIDC token returns 401 when skip is False (default)."""
+        resp = marketplace_client.post("/pubsub", json=_pubsub_body())
+        assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------

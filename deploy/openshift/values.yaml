@@ -130,6 +130,11 @@ auth:
   # a self-signed key (not Google's production service account).
   # Does not affect the agent's Bearer token authentication.
   skipDcrJwtValidation: false
+  # Skip Google OIDC token verification on the handler's /pubsub endpoint.
+  # Enable for standalone deployments where simulated Pub/Sub events are
+  # sent directly (e.g., from the standalone UI) without Google-signed tokens.
+  # Blocked on Cloud Run (K_SERVICE). Does not affect the agent service.
+  skipPubsubOidcVerification: false
   # CORS allowed origins (comma-separated, empty = disabled in production)
   corsAllowedOrigins: ""
 
@@ -175,6 +180,9 @@ postgresql:
   sessionBackend: memory
   poolSize: 5
   poolMaxOverflow: 10
+  # Require SSL/TLS for PostgreSQL database connections.
+  # Not needed when using Unix sockets or cluster-internal unencrypted connections.
+  requireSsl: false
   user: sessions
   database: agent_sessions
   storage:
@@ -248,6 +256,10 @@ handler:
   # Required for entitlement approval and product-level Pub/Sub event filtering.
   probePort: 8003
   serviceControlServiceName: ""
+  # Google Cloud Pub/Sub OIDC audience verification.
+  # Set to the handler's URL for strict OIDC token binding on the /pubsub endpoint.
+  # If empty, tokens are verified for signature/expiry but not audience.
+  pubsubAudience: ""
   metering:
     staleClaimMinutes: 15
     backfillMaxAgeHours: 168

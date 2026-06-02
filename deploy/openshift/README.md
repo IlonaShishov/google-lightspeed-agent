@@ -166,6 +166,8 @@ Edit `my-values.yaml`:
 auth:
   # Accept self-signed DCR JWTs (not signed by Google's production SA)
   skipDcrJwtValidation: true
+  # Skip Pub/Sub OIDC — standalone UI sends simulated events directly
+  skipPubsubOidcVerification: true
 
 secrets:
   create: true
@@ -442,6 +444,7 @@ The `openai/` prefix tells LiteLLM to use the OpenAI-compatible chat completions
 | `auth.skipJwtValidation` | Skip JWT validation (dev only — blocked on Cloud Run) | `false` |
 | `auth.skipOrderValidation` | Skip marketplace order-id checks | `true` |
 | `auth.skipDcrJwtValidation` | Skip DCR software_statement JWT signature verification. Enable for deployments using self-signed JWTs. Does not affect agent auth. | `false` |
+| `auth.skipPubsubOidcVerification` | Skip Google OIDC token verification on the handler's `/pubsub` endpoint. Enable for deployments where simulated Pub/Sub events come from the UI, not Google Cloud. Blocked on Cloud Run. | `false` |
 | `auth.corsAllowedOrigins` | CORS allowed origins (comma-separated) | `""` |
 | `sso.issuer` | Red Hat SSO issuer URL | `https://sso.redhat.com/auth/realms/redhat-external` |
 | `sso.requiredScope` | Required OAuth scopes (comma-separated) | `api.console,api.ocm` |
@@ -460,6 +463,7 @@ With the default `memory` backend, no session database is created.
 | `postgresql.sessionBackend` | `database` (persist to PostgreSQL) or `memory` (lost on restart) | `memory` |
 | `postgresql.poolSize` | Connection pool size | `5` |
 | `postgresql.poolMaxOverflow` | Max pool overflow | `10` |
+| `postgresql.requireSsl` | Require SSL/TLS for PostgreSQL connections | `false` |
 | `postgresql.user` | Database user | `sessions` |
 | `postgresql.database` | Database name | `agent_sessions` |
 | `postgresql.storage.size` | PVC size | `1Gi` |
@@ -511,6 +515,7 @@ A separate PostgreSQL instance for marketplace/entitlement data.
 | `handler.port` | Handler listen port | `8001` |
 | `handler.probePort` | Handler probe port | `8003` |
 | `handler.route.enabled` | Create an OpenShift Route for the handler (disabled by default — handler is ClusterIP only, reached via UI nginx proxy) | `false` |
+| `handler.pubsubAudience` | Expected audience in Pub/Sub OIDC tokens (set to handler URL for strict binding) | `""` |
 | `handler.dcr.clientNamePrefix` | Prefix for created OAuth clients | `gemini-order-` |
 | `handler.serviceControlServiceName` | Marketplace product identifier (from GCP Producer Portal) | `""` |
 | `handler.metering.staleClaimMinutes` | Stale claim timeout | `15` |
@@ -591,7 +596,7 @@ of deployment platform:
 | Protection | Implementation | Details |
 |---|---|---|
 | **Request body size limits** | `security/body_limit.py` | 10 MB agent, 1 MB marketplace handler |
-| **Security headers** | `security/middleware.py` | HSTS, X-Content-Type-Options nosniff, X-Frame-Options DENY |
+| **Security headers** | `security/middleware.py` | HSTS, CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, Cache-Control |
 | **Rate limiting** | `ratelimit/middleware.py` | 60 req/min, 1000 req/hr per IP via Redis |
 | **JWT authentication** | `auth/middleware.py` | Red Hat SSO token introspection (RFC 7662) |
 | **CORS** | FastAPI middleware | Disabled by default; configurable via `auth.corsAllowedOrigins` |

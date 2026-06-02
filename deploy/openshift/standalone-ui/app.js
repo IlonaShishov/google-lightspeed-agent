@@ -172,7 +172,7 @@
       account: { id: accountId },
     };
     var dataB64 = btoa(JSON.stringify(data));
-    var resp = await fetch("/api/handler/dcr", {
+    var resp = await fetch("/api/handler/pubsub", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

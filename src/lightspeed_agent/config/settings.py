@@ -434,6 +434,13 @@ class Settings(BaseSettings):
         "without verifying against Google's certificates. Does not affect "
         "the agent's Bearer token authentication.",
     )
+    skip_pubsub_oidc_verification: bool = Field(
+        default=False,
+        description="Skip Google OIDC token verification on the /pubsub endpoint "
+        "(non-Cloud-Run only). "
+        "Enable for standalone deployments where simulated Pub/Sub events "
+        "are sent directly (e.g., from the standalone UI) without Google-signed tokens.",
+    )
 
     @model_validator(mode="after")
     def _warn_debug_in_production(self) -> "Settings":
@@ -517,6 +524,22 @@ class Settings(BaseSettings):
                 "SKIP_DCR_JWT_VALIDATION=true is not allowed in Cloud Run "
                 f"(K_SERVICE={os.getenv('K_SERVICE')}). "
                 "This setting is intended for local development only."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _block_skip_pubsub_oidc_in_production(self) -> "Settings":
+        """Prevent SKIP_PUBSUB_OIDC_VERIFICATION from being enabled in Cloud Run.
+
+        The /pubsub endpoint on the marketplace handler verifies Google-signed
+        OIDC tokens. Skipping this is only safe in standalone/development
+        deployments where simulated events come from the UI, not Google Pub/Sub.
+        """
+        if self.skip_pubsub_oidc_verification and os.getenv("K_SERVICE"):
+            raise ValueError(
+                "SKIP_PUBSUB_OIDC_VERIFICATION=true is not allowed in Cloud Run "
+                f"(K_SERVICE={os.getenv('K_SERVICE')}). "
+                "This setting is intended for standalone/development deployments only."
             )
         return self
 

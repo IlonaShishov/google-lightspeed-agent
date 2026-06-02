@@ -225,3 +225,30 @@ class TestSkipDcrJwtValidationGuard:
             pytest.raises(ValidationError, match="not allowed in Cloud Run"),
         ):
             Settings(skip_dcr_jwt_validation=True)
+
+
+class TestSkipPubsubOidcVerificationGuard:
+    """Verify SKIP_PUBSUB_OIDC_VERIFICATION cannot be enabled in Cloud Run."""
+
+    def _env_without_k_service(self) -> dict[str, str]:
+        return {k: v for k, v in os.environ.items() if k != "K_SERVICE"}
+
+    def test_skip_pubsub_oidc_defaults_to_false(self):
+        """Default value of skip_pubsub_oidc_verification is False."""
+        with patch.dict(os.environ, self._env_without_k_service(), clear=True):
+            settings = Settings()
+            assert settings.skip_pubsub_oidc_verification is False
+
+    def test_skip_pubsub_oidc_allowed_without_k_service(self):
+        """SKIP_PUBSUB_OIDC_VERIFICATION=true is fine when K_SERVICE is unset."""
+        with patch.dict(os.environ, self._env_without_k_service(), clear=True):
+            settings = Settings(skip_pubsub_oidc_verification=True)
+            assert settings.skip_pubsub_oidc_verification is True
+
+    def test_skip_pubsub_oidc_blocked_in_cloud_run(self):
+        """SKIP_PUBSUB_OIDC_VERIFICATION=true must fail when K_SERVICE is set."""
+        with (
+            patch.dict(os.environ, {"K_SERVICE": "lightspeed-agent"}, clear=False),
+            pytest.raises(ValidationError, match="not allowed in Cloud Run"),
+        ):
+            Settings(skip_pubsub_oidc_verification=True)
