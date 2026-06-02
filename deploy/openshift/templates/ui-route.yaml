@@ -1,4 +1,4 @@
-{{- if .Values.standaloneUI.route.enabled }}
+{{- if and (eq (include "lightspeed-agent.uiEnabled" .) "true") .Values.standaloneUI.route.enabled }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:

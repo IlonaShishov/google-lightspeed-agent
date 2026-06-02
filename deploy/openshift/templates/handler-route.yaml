@@ -1,4 +1,4 @@
-{{- if .Values.handler.route.enabled }}
+{{- if and (eq (include "lightspeed-agent.handlerEnabled" .) "true") .Values.handler.route.enabled }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:

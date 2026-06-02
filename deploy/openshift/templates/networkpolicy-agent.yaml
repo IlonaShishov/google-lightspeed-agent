@@ -17,9 +17,11 @@ spec:
             matchLabels:
               network.openshift.io/policy-group: ingress
               kubernetes.io/metadata.name: {{ .Values.agent.ingressNamespace | default "openshift-ingress" }}
+        {{- if eq (include "lightspeed-agent.uiEnabled" .) "true" }}
         - podSelector:
             matchLabels:
               {{- include "lightspeed-agent.uiSelectorLabels" . | nindent 14 }}
+        {{- end }}
       ports:
         - protocol: TCP
           port: {{ .Values.agent.port }}

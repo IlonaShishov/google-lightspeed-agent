@@ -1,3 +1,4 @@
+{{- if eq (include "lightspeed-agent.handlerEnabled" .) "true" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -128,3 +129,4 @@ spec:
             secretName: {{ include "lightspeed-agent.fullname" . }}-gcp-sa-key
         - name: tmp
           emptyDir: {}
+{{- end }}

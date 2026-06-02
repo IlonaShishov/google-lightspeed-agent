@@ -1,8 +1,42 @@
 # Red Hat Lightspeed Agent — OpenShift Deployment (Helm)
 
-Deploy the Red Hat Lightspeed Agent on OpenShift using Helm.
+Deploy the Red Hat Lightspeed Agent on OpenShift using Helm. Two deployment
+modes are supported:
+
+| Mode | `deploymentMode` | What runs on OCP | What stays on GCP |
+|------|-------------------|------------------|-------------------|
+| **Hybrid** (default) | `hybrid` | Agent, Redis | Marketplace handler (Cloud Run) |
+| **Standalone** | `standalone` | Everything — agent, handler, UI, PostgreSQL, Redis | Only the Gemini API |
 
 ## Architecture
+
+### Hybrid mode
+
+```
+  Google Cloud                         OpenShift Cluster
+  +-----------------+                  +-------------------------------+
+  |  Cloud Run      |                  |     OpenShift Route           |
+  |  marketplace    |                  |     (TLS edge termination)    |
+  |  handler        |                  +-------------+-----------------+
+  |  (port 8001)    |                                |
+  +-----------------+                  +-------------v-----------------+
+                                       |   lightspeed-agent (Pod)      |
+                                       |   agent (8000) + MCP (8081)   |
+                                       +---+--------------------------+
+                                           |
+                                 +----------+--------+
+                                 |  Redis            |
+                                 |  (rate limiting)  |
+                                 |  Port 6379        |
+                                 +-------------------+
+```
+
+In hybrid mode the handler is **not deployed** on OCP and sessions use in-memory
+storage by default. Order validation is skipped (`auth.skipOrderValidation: true`)
+since there is no local marketplace database. JWT introspection against Red Hat
+SSO is still enforced.
+
+### Standalone mode
 
 ```
   OpenShift Cluster
@@ -37,14 +71,14 @@ a web interface to:
 
 ## Components
 
-| Component | Description |
-|---|---|
-| **lightspeed-agent** | A2A agent (Gemini + ADK) with MCP sidecar |
-| **postgresql** | PostgreSQL 16 for session persistence (only when `sessionBackend: database`) |
-| **marketplace-postgresql** | PostgreSQL 16 for marketplace/entitlement data |
-| **redis** | Redis 7 for distributed rate limiting |
-| **marketplace-handler** | DCR and marketplace event handler |
-| **standalone-ui** | Web UI for DCR + A2A testing |
+| Component | Description | Deployed in |
+|---|---|---|
+| **lightspeed-agent** | A2A agent (Gemini + ADK) with MCP sidecar | Both modes |
+| **postgresql** | PostgreSQL 16 for session persistence | Both (only when `sessionBackend: database`) |
+| **marketplace-postgresql** | PostgreSQL 16 for marketplace/entitlement data | Standalone only |
+| **redis** | Redis 7 for distributed rate limiting | Both modes |
+| **marketplace-handler** | DCR and marketplace event handler | Standalone only |
+| **standalone-ui** | Web UI for DCR + A2A testing | Standalone only |
 
 ## Prerequisites
 
@@ -62,19 +96,23 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
 ### Requirements
 
+**Both modes:**
 - OpenShift 4.x cluster with `oc` and `helm` CLIs
 - Container image access: `quay.io/ecosystem-appeng/google-lightspeed-agent`,
   `quay.io/redhat-services-prod/.../red-hat-lightspeed-mcp`,
-  `quay.io/fedora/redis-7`, `registry.redhat.io/rhel9/postgresql-16`,
-  `quay.io/ecosystem-appeng/google-marketplace-handler`,
-  `quay.io/ecosystem-appeng/google-lightspeed-agent-ui`
+  `quay.io/fedora/redis-7`, `registry.redhat.io/rhel9/postgresql-16` (if using database session backend or standalone mode)
 - Google AI Studio API key **or** Vertex AI project
 - Red Hat SSO OAuth credentials (client ID and secret)
+
+**Standalone mode (additional):**
+- Container images for handler and UI:
+  `quay.io/ecosystem-appeng/google-marketplace-handler`,
+  `quay.io/ecosystem-appeng/google-lightspeed-agent-ui`
 - A Fernet encryption key for DCR
   (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
 - A GCP service account key (if Service Control is enabled)
 
-## Deployment
+## Deployment — Hybrid Mode
 
 ### 1. Create a project
 
@@ -108,6 +146,124 @@ imagePullSecrets:
 > `registry.redhat.io` configured at install time — check with your cluster
 > admin before creating one. If using private image registries, add their
 > pull secrets to the same list.
+
+### 3. Select an image tag
+
+The default images in `values.yaml` point to the official repositories. Browse
+the available tags and choose the one matching your desired version or commit:
+
+- **Agent**: `quay.io/ecosystem-appeng/google-lightspeed-agent`
+- **MCP sidecar**: `quay.io/redhat-services-prod/.../red-hat-lightspeed-mcp`
+
+Set the tag in your values file:
+
+```yaml
+agent:
+  image:
+    tag: "<commit-sha-or-version>"
+```
+
+> **Tip — local testing**: You can also build and push images to your own
+> registry for development purposes:
+>
+> ```bash
+> podman build -t quay.io/<your-org>/lightspeed-agent:latest -f Containerfile .
+> podman push quay.io/<your-org>/lightspeed-agent:latest
+> ```
+>
+> Then override the repository in your values file:
+> `agent.image.repository: quay.io/<your-org>/lightspeed-agent`
+
+### 4. Configure values
+
+```bash
+cp deploy/openshift/values.yaml deploy/openshift/my-values.yaml
+```
+
+Edit `my-values.yaml`:
+
+```yaml
+deploymentMode: hybrid   # default
+
+auth:
+  skipOrderValidation: true
+
+secrets:
+  create: true
+  googleApiKey: "your-real-api-key"
+  redHatSsoClientId: "your-real-client-id"
+  redHatSsoClientSecret: "your-real-client-secret"
+  redisPassword: "a-strong-redis-password"
+```
+
+No database, handler, or UI configuration is needed — sessions use in-memory
+storage by default, and the handler and standalone UI are not deployed in hybrid
+mode. Order validation is skipped (`skipOrderValidation: true`) since there is
+no local marketplace database. JWT introspection against Red Hat SSO is still
+enforced.
+
+> **Persistent sessions**: To persist sessions across pod restarts, set
+> `postgresql.sessionBackend: database` and provide `secrets.sessionDbPassword`
+> and `secrets.sessionDatabaseUrl`. This deploys a session PostgreSQL instance.
+
+### 5. Install
+
+```bash
+helm install lightspeed-agent deploy/openshift/ \
+  -f deploy/openshift/my-values.yaml \
+  -n lightspeed-agent
+```
+
+### 6. Update the provider URL in values file
+
+After the Route is created, get the hostname and persist it in your values file
+so it survives future upgrades and pod restarts:
+
+```bash
+AGENT_HOST=$(oc get route lightspeed-agent -n lightspeed-agent -o jsonpath='{.spec.host}')
+echo "Agent Route: https://${AGENT_HOST}"
+```
+
+Add the URL to `my-values.yaml`:
+
+```yaml
+agent:
+  providerUrl: "https://<AGENT_HOST>"   # paste the actual hostname
+```
+
+Then apply:
+
+```bash
+helm upgrade lightspeed-agent deploy/openshift/ \
+  -f deploy/openshift/my-values.yaml \
+  -n lightspeed-agent
+```
+
+### 7. Verify
+
+```bash
+oc get pods -n lightspeed-agent
+
+# Health check via internal probe port
+AGENT_POD=$(oc get pod -n lightspeed-agent -l app.kubernetes.io/component=agent -o jsonpath='{.items[0].metadata.name}')
+oc exec -n lightspeed-agent "${AGENT_POD}" -c agent -- curl -s http://localhost:8002/health
+
+# Agent card via route
+AGENT_HOST=$(oc get route lightspeed-agent -n lightspeed-agent -o jsonpath='{.spec.host}')
+curl -sk https://${AGENT_HOST}/.well-known/agent.json | python -m json.tool
+```
+
+## Deployment — Standalone Mode
+
+### 1. Create a project
+
+```bash
+oc new-project lightspeed-agent
+```
+
+### 2. Configure image pull secrets
+
+Follow the same pull secret setup as in [hybrid mode step 2](#2-configure-image-pull-secrets).
 
 ### 3. Select image tags
 
@@ -163,7 +319,11 @@ cp deploy/openshift/values.yaml deploy/openshift/my-values.yaml
 Edit `my-values.yaml`:
 
 ```yaml
+deploymentMode: standalone
+
 auth:
+  # Disable order validation skip — standalone has a local marketplace DB
+  skipOrderValidation: false
   # Accept self-signed DCR JWTs (not signed by Google's production SA)
   skipDcrJwtValidation: true
   # Skip Pub/Sub OIDC — standalone UI sends simulated events directly
@@ -186,9 +346,10 @@ secrets:
   gmaClientSecret: "your-gma-client-secret"
 ```
 
-> **Persistent sessions**: To persist sessions across pod restarts, set
-> `postgresql.sessionBackend: database` and provide `secrets.sessionDbPassword`
-> and `secrets.sessionDatabaseUrl`. This deploys a session PostgreSQL instance.
+> **Note:** Setting `deploymentMode: standalone` automatically deploys the handler,
+> standalone UI, and marketplace PostgreSQL — no additional flags are needed.
+> Sessions use in-memory storage by default; set `postgresql.sessionBackend: database`
+> to persist them (see hybrid mode note above).
 
 ### 5. Install
 
@@ -318,6 +479,12 @@ Use the **Reset** button to clear all state and start over (the entitlement and
 DCR client are cleaned up from the database).
 
 ## Configuration Reference
+
+### Deployment mode
+
+| Value | Description | Default |
+|---|---|---|
+| `deploymentMode` | `hybrid` or `standalone` — controls which components are deployed and how auth behaves (see [Mode Comparison](#mode-comparison)) | `hybrid` |
 
 ### Image pull secrets
 
@@ -468,9 +635,10 @@ With the default `memory` backend, no session database is created.
 | `postgresql.database` | Database name | `agent_sessions` |
 | `postgresql.storage.size` | PVC size | `1Gi` |
 
-### Marketplace Database
+### Marketplace Database (standalone mode only)
 
-A separate PostgreSQL instance for marketplace/entitlement data.
+A separate PostgreSQL instance for marketplace/entitlement data. Deployed only
+when `deploymentMode: standalone`.
 
 | Value | Description | Default |
 |---|---|---|
@@ -503,7 +671,9 @@ A separate PostgreSQL instance for marketplace/entitlement data.
 | `route.tls.termination` | TLS termination type | `edge` |
 | `route.tls.insecureEdgeTerminationPolicy` | Redirect HTTP to HTTPS | `Redirect` |
 
-### Handler
+### Handler (standalone mode only)
+
+Deployed only when `deploymentMode: standalone`.
 
 | Value | Description | Default |
 |---|---|---|
@@ -530,7 +700,9 @@ A separate PostgreSQL instance for marketplace/entitlement data.
 |---|---|---|
 | `serviceControl.enabled` | Enable Google Cloud Service Control usage reporting | `false` |
 
-### Standalone UI
+### Standalone UI (standalone mode only)
+
+Deployed only when `deploymentMode: standalone`.
 
 | Value | Description | Default |
 |---|---|---|
@@ -542,23 +714,23 @@ A separate PostgreSQL instance for marketplace/entitlement data.
 
 ### Secrets
 
-| Value | Description | Required |
+| Value | Description | Required in |
 |---|---|---|
-| `secrets.create` | Have the chart create the Secret from values below (`false` = manage externally) | Yes |
-| `secrets.googleApiKey` | Google AI API key | Yes (unless Vertex AI) |
-| `secrets.googleCloudProject` | GCP project ID | Only with Vertex AI |
-| `secrets.redHatSsoClientId` | Red Hat SSO client ID | Yes |
-| `secrets.redHatSsoClientSecret` | Red Hat SSO client secret | Yes |
+| `secrets.create` | Have the chart create the Secret from values below (`false` = manage externally) | Both |
+| `secrets.googleApiKey` | Google AI API key | Both (unless Vertex AI) |
+| `secrets.googleCloudProject` | GCP project ID | Both (Vertex AI only) |
+| `secrets.redHatSsoClientId` | Red Hat SSO client ID | Both |
+| `secrets.redHatSsoClientSecret` | Red Hat SSO client secret | Both |
 | `secrets.sessionDbPassword` | Session PostgreSQL password | Only when `sessionBackend: database` |
 | `secrets.sessionDatabaseUrl` | Session database connection URL | Only when `sessionBackend: database` |
-| `secrets.redisPassword` | Redis authentication password | Yes |
-| `secrets.marketplaceDbPassword` | Marketplace PostgreSQL password | Yes |
-| `secrets.databaseUrl` | Marketplace database connection URL | Yes |
-| `secrets.dcrEncryptionKey` | Fernet key for encrypting stored DCR client secrets | Yes |
-| `secrets.gmaClientId` | GMA API client ID (for DCR tenant creation) | Yes |
-| `secrets.gmaClientSecret` | GMA API client secret | Yes |
-| `secrets.llmApiKey` | API key for non-Google LLM providers (`litellm` only) | Only with `litellm` provider |
-| `secrets.gcpServiceAccountKey` | Base64-encoded GCP SA key JSON (for ADC outside Cloud Run) | Only with GCP Service Control |
+| `secrets.redisPassword` | Redis authentication password | Both |
+| `secrets.marketplaceDbPassword` | Marketplace PostgreSQL password | Standalone only |
+| `secrets.databaseUrl` | Marketplace database connection URL | Standalone only |
+| `secrets.dcrEncryptionKey` | Fernet key for encrypting stored DCR client secrets | Standalone only |
+| `secrets.gmaClientId` | GMA API client ID (for DCR tenant creation) | Standalone only |
+| `secrets.gmaClientSecret` | GMA API client secret | Standalone only |
+| `secrets.llmApiKey` | API key for non-Google LLM providers (`litellm` only) | When using `litellm` provider |
+| `secrets.gcpServiceAccountKey` | Base64-encoded GCP SA key JSON (for ADC outside Cloud Run) | Standalone + GCP only |
 
 ### Observability
 
@@ -582,9 +754,11 @@ The agent authenticates requests via Red Hat SSO token introspection:
 2. The agent validates the token via the SSO introspection endpoint
 3. The required scopes (`api.console,api.ocm` by default) are checked
 
-The handler manages DCR clients and entitlements locally in the marketplace
-PostgreSQL. Order validation can be enabled or skipped via
-`auth.skipOrderValidation`.
+**Hybrid mode** — order validation is skipped (`skipOrderValidation: true`).
+Token introspection against Red Hat SSO is still enforced.
+
+**Standalone mode** — the handler manages DCR clients and entitlements locally
+in the shared PostgreSQL. Order validation can be enabled or skipped.
 
 ## Security
 

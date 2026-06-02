@@ -176,6 +176,10 @@ The agent supports three deployment targets. The application code is identical �
 | **OpenShift** | Routes with TLS edge termination | None built-in (use external WAF if needed) | NetworkPolicies for DB/Redis | `deploy/openshift/` (Helm) |
 | **Podman** | Direct port binding | None | Host-level | `Makefile` targets |
 
+OpenShift supports two sub-modes via Helm (`deploymentMode` value):
+- **hybrid** (default) — Agent + Redis on OCP; marketplace handler stays on Cloud Run. Order validation skipped (`SKIP_ORDER_VALIDATION=true`).
+- **standalone** — Everything on OCP including handler, UI, and PostgreSQL. Full order lifecycle with local marketplace database.
+
 Application-level protections (body size limits, security headers, rate limiting, JWT auth) apply identically on all platforms. See `deploy/openshift/README.md` for OCP-specific details.
 
 ### DCR (Dynamic Client Registration)

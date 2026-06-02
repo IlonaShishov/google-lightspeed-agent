@@ -1,5 +1,7 @@
 Thank you for installing {{ .Chart.Name }}!
 
+Deployment mode: {{ .Values.deploymentMode }}
+
 == Agent ==
 
 Get the agent Route URL:
@@ -11,6 +13,8 @@ Verify the agent is healthy:
 
   curl -s https://${AGENT_HOST}/health
   curl -s https://${AGENT_HOST}/.well-known/agent.json | python -m json.tool
+
+{{- if eq .Values.deploymentMode "standalone" }}
 
 == Standalone UI ==
 
@@ -27,6 +31,8 @@ The marketplace handler is a ClusterIP service (not publicly exposed).
 It is accessible within the cluster at:
 
   http://{{ include "lightspeed-agent.handlerServiceName" . }}:{{ .Values.handler.port }}
+
+{{- end }}
 
 == Next Steps ==
 

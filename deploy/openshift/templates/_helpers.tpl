@@ -116,3 +116,18 @@ UI service name
 {{- include "lightspeed-agent.fullname" . }}-ui
 {{- end }}
 
+{{/*
+Whether the handler should be deployed on OCP.
+Only deployed in standalone mode — in hybrid the handler stays on GCP.
+*/}}
+{{- define "lightspeed-agent.handlerEnabled" -}}
+{{- eq .Values.deploymentMode "standalone" -}}
+{{- end }}
+
+{{/*
+Whether the standalone UI should be deployed.
+Only deployed in standalone mode.
+*/}}
+{{- define "lightspeed-agent.uiEnabled" -}}
+{{- eq .Values.deploymentMode "standalone" -}}
+{{- end }}

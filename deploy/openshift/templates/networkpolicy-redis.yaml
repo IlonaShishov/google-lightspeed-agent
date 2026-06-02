@@ -16,9 +16,11 @@ spec:
         - podSelector:
             matchLabels:
               {{- include "lightspeed-agent.agentSelectorLabels" . | nindent 14 }}
+        {{- if eq (include "lightspeed-agent.handlerEnabled" .) "true" }}
         - podSelector:
             matchLabels:
               {{- include "lightspeed-agent.handlerSelectorLabels" . | nindent 14 }}
+        {{- end }}
       ports:
         - protocol: TCP
           port: 6379

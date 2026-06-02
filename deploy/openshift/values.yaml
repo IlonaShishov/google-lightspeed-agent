@@ -2,6 +2,13 @@
 # =============================================================================
 
 # ---------------------------------------------------------------------------
+# Deployment mode
+# ---------------------------------------------------------------------------
+# hybrid     — Agent on OCP, marketplace handler stays on GCP (Cloud Run)
+# standalone — Everything on OCP (agent + handler + UI)
+deploymentMode: hybrid
+
+# ---------------------------------------------------------------------------
 # Image pull secrets — list of pre-created Secret names for private registries.
 # Create the secrets with: oc create secret docker-registry <name> ...
 # ---------------------------------------------------------------------------
@@ -124,6 +131,8 @@ auth:
   # Skip JWT validation entirely (development only — do NOT enable in production)
   skipJwtValidation: false
   # Skip marketplace order-id validation while keeping JWT introspection.
+  # In hybrid mode this must be true (no local marketplace database).
+  # In standalone mode set to false to enable order validation.
   skipOrderValidation: true
   # Skip DCR software_statement JWT signature verification.
   # Enable for standalone deployments where DCR requests are signed with
@@ -199,7 +208,7 @@ postgresql:
       memory: 512Mi
 
 # ---------------------------------------------------------------------------
-# Marketplace PostgreSQL database
+# Marketplace PostgreSQL database (standalone mode only)
 # ---------------------------------------------------------------------------
 marketplacePostgresql:
   image:
@@ -295,7 +304,7 @@ route:
     insecureEdgeTerminationPolicy: Redirect
 
 # ---------------------------------------------------------------------------
-# Standalone UI
+# Standalone UI (deployed only in standalone mode)
 # ---------------------------------------------------------------------------
 standaloneUI:
   image:
@@ -335,7 +344,7 @@ secrets:
   # Session database connection URL. Auto-generated from release name when empty.
   # Override only if using an external database.
   sessionDatabaseUrl: ""
-  # --- Marketplace database ---
+  # --- Marketplace database (only needed in standalone mode) ---
   marketplaceDbPassword: ""
   # Marketplace database connection URL. Auto-generated from release name when empty.
   # Override only if using an external database.

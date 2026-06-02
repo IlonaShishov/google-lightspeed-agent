@@ -68,7 +68,7 @@ data:
   SESSION_DB_USER: {{ .Values.postgresql.user | quote }}
   SESSION_DB_NAME: {{ .Values.postgresql.database | quote }}
 
-  # Marketplace PostgreSQL Configuration
+  # Marketplace PostgreSQL Configuration (standalone mode)
   MARKETPLACE_DB_USER: {{ .Values.marketplacePostgresql.user | quote }}
   MARKETPLACE_DB_NAME: {{ .Values.marketplacePostgresql.database | quote }}
 
