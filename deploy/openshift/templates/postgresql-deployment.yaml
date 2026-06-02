@@ -54,6 +54,8 @@ spec:
                   name: {{ include "lightspeed-agent.fullname" . }}-config
                   key: SESSION_DB_NAME
           volumeMounts:
+            - name: postgresql-home
+              mountPath: /var/lib/pgsql
             - name: postgresql-data
               mountPath: /var/lib/pgsql/data
             - name: tmp
@@ -86,6 +88,8 @@ spec:
         - name: postgresql-data
           persistentVolumeClaim:
             claimName: {{ include "lightspeed-agent.fullname" . }}-postgresql-data
+        - name: postgresql-home
+          emptyDir: {}
         - name: tmp
           emptyDir: {}
         - name: run-postgresql
