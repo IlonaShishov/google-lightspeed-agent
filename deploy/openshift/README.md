@@ -619,6 +619,14 @@ The `openai/` prefix tells LiteLLM to use the OpenAI-compatible chat completions
 > - Gemini HTTP retry settings (`google.httpRetry.*`) do not apply to `litellm` providers.
 > - MCP tools work with all model providers.
 > - See [Configuration — LLM Provider](../../docs/configuration.md#llm-provider) for all available settings.
+> - **LiteLLM proxy chaining:** When `apiBase` points to another LiteLLM proxy
+>   (e.g., a central LiteLLM gateway that routes to model backends), the model
+>   name **must** include the `openai/` prefix (e.g., `openai/my-model`). Without
+>   the prefix, LiteLLM does not recognize the upstream as an OpenAI-compatible
+>   endpoint and the request fails. This is documented in the LiteLLM
+>   [OpenAI-Compatible Endpoints](https://docs.litellm.ai/docs/providers/openai_compatible)
+>   and [LiteLLM Proxy provider](https://docs.litellm.ai/docs/providers/litellm_proxy)
+>   pages.
 
 ### Authentication
 
