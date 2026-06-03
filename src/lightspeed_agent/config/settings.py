@@ -1,11 +1,14 @@
 """Application settings and configuration management."""
 
+import logging
 import os
 from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -187,6 +190,16 @@ class Settings(BaseSettings):
         default="",
         description=(
             "URL of the marketplace handler service for DCR. If empty, uses agent_provider_url."
+        ),
+    )
+
+    # Google Cloud Pub/Sub OIDC verification
+    pubsub_audience: str = Field(
+        default="",
+        description=(
+            "Expected audience claim in Google Cloud Pub/Sub OIDC tokens. "
+            "Set to your push subscription's audience value "
+            "(typically the service URL, e.g., https://marketplace-handler-xxx.run.app)."
         ),
     )
 
@@ -408,6 +421,26 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
+    def _warn_debug_in_production(self) -> "Settings":
+        """Warn when DEBUG is enabled in a Cloud Run deployment.
+
+        Cloud Run sets K_SERVICE automatically. If that variable is present,
+        this is a managed deployment and debug mode should not be enabled.
+        Unlike SKIP_JWT_VALIDATION (which raises on startup), DEBUG does not
+        bypass authentication, so we log a warning rather than refusing to start.
+        """
+        if self.debug and os.getenv("K_SERVICE"):
+            logger.warning(
+                "DEBUG=true is active in Cloud Run "
+                "(K_SERVICE=%s). "
+                "This exposes /docs, /redoc, enables wildcard CORS, "
+                "and turns on SQL echo logging. "
+                "This setting is intended for local development only.",
+                os.getenv("K_SERVICE"),
+            )
+        return self
+
+    @model_validator(mode="after")
     def _block_skip_jwt_in_production(self) -> "Settings":
         """Prevent SKIP_JWT_VALIDATION from being enabled in production.
 
@@ -419,6 +452,26 @@ class Settings(BaseSettings):
                 "SKIP_JWT_VALIDATION=true is not allowed in Cloud Run "
                 f"(K_SERVICE={os.getenv('K_SERVICE')}). "
                 "This setting is intended for local development only."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _block_sqlite_in_production(self) -> "Settings":
+        """Prevent SQLite database URLs in Cloud Run production."""
+        k_service = os.getenv("K_SERVICE")
+        if not k_service:
+            return self
+        if self.database_url.lower().startswith("sqlite"):
+            raise ValueError(
+                "SQLite DATABASE_URL is not allowed in Cloud Run "
+                f"(K_SERVICE={k_service}). "
+                "Use PostgreSQL for production deployments."
+            )
+        if self.session_database_url and self.session_database_url.lower().startswith("sqlite"):
+            raise ValueError(
+                "SQLite SESSION_DATABASE_URL is not allowed in Cloud Run "
+                f"(K_SERVICE={k_service}). "
+                "Use PostgreSQL for production deployments."
             )
         return self
 
