@@ -65,32 +65,34 @@ async def pubsub_handler(request: Request) -> JSONResponse:
     Returns:
         Acknowledgment or error.
     """
-    # Verify Google OIDC token
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="Missing or invalid Authorization header. "
-            "Pub/Sub push subscriptions must be configured with OIDC authentication.",
-        )
-
-    token = auth_header[7:]
     settings = get_settings()
 
-    try:
-        audience = settings.pubsub_audience or None
-        await asyncio.to_thread(
-            google_id_token.verify_oauth2_token,
-            token,
-            google_requests.Request(),
-            audience=audience,
-        )
-    except (ValueError, google_auth_exceptions.GoogleAuthError) as e:
-        logger.warning("Pub/Sub OIDC token verification failed: %s", e)
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid Pub/Sub OIDC token",
-        ) from e
+    # Verify Google OIDC token (skipped in standalone/dev deployments)
+    if not settings.skip_pubsub_oidc_verification:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Missing or invalid Authorization header. "
+                "Pub/Sub push subscriptions must be configured with OIDC authentication.",
+            )
+
+        token = auth_header[7:]
+
+        try:
+            audience = settings.pubsub_audience or None
+            await asyncio.to_thread(
+                google_id_token.verify_oauth2_token,
+                token,
+                google_requests.Request(),
+                audience=audience,
+            )
+        except (ValueError, google_auth_exceptions.GoogleAuthError) as e:
+            logger.warning("Pub/Sub OIDC token verification failed: %s", e)
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid Pub/Sub OIDC token",
+            ) from e
 
     try:
         body = await request.json()
