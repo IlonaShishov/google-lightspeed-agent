@@ -37,30 +37,30 @@ substitutions:
   _SERVICE_NAME: lightspeed-agent
   _HANDLER_SERVICE_NAME: marketplace-handler
   _REGION: us-central1
-  _VERTEXAI_LOCATION: "global"
+  _VERTEXAI_LOCATION: global
   _IMAGE_TAG: latest
   _SERVICE_ACCOUNT_NAME: lightspeed-agent
   _DB_INSTANCE_NAME: lightspeed-agent-db
   _VPC_CONNECTOR_NAME: lightspeed-redis-conn
-  _MCP_SOURCE_IMAGE: "quay.io/redhat-services-prod/insights-management-tenant/insights-mcp/red-hat-lightspeed-mcp:latest"
+  _MCP_SOURCE_IMAGE: quay.io/redhat-services-prod/insights-management-tenant/insights-mcp/red-hat-lightspeed-mcp:latest
   _ALLOW_UNAUTHENTICATED: "false"
   _PUBSUB_INVOKER_NAME: pubsub-invoker
   _PUBSUB_TOPIC: marketplace-entitlements
   _PUBSUB_SUBSCRIPTION: ""
-  _AGENT_SOURCE_IMAGE: "quay.io/ecosystem-appeng/google-lightspeed-agent:latest"
-  _HANDLER_SOURCE_IMAGE: "quay.io/ecosystem-appeng/google-marketplace-handler:latest"
+  _AGENT_SOURCE_IMAGE: quay.io/ecosystem-appeng/google-lightspeed-agent:latest
+  _HANDLER_SOURCE_IMAGE: quay.io/ecosystem-appeng/google-marketplace-handler:latest
   _SERVICE_CONTROL_SERVICE_NAME: ""
   # GCLB and Cloud Armor configuration
   _ENABLE_LB_AGENT: "true"
   _ENABLE_LB_HANDLER: "true"
   _ENABLE_CLOUD_ARMOR_AGENT: "true"
   _ENABLE_CLOUD_ARMOR_HANDLER: "true"
-  _CLOUD_ARMOR_SENSITIVITY_AGENT: "1"
-  _CLOUD_ARMOR_SENSITIVITY_HANDLER: "2"
+  _CLOUD_ARMOR_SENSITIVITY_AGENT: 1
+  _CLOUD_ARMOR_SENSITIVITY_HANDLER: 2
   _AGENT_DOMAIN_NAME: ""
   _HANDLER_DOMAIN_NAME: ""
   _LB_NAME: lightspeed-lb
-  _SCAN_SEVERITY: "CRITICAL,HIGH"
+  _SCAN_SEVERITY: CRITICAL,HIGH
 
 timeout: 1800s
 
@@ -285,6 +285,87 @@ steps:
     waitFor: ['push-agent', 'push-handler', 'push-mcp', 'deploy-handler']
 
   # ==========================================================================
+  # HEALTHCHECK PHASE - Verify services are ready before post-deploy config
+  # Polls the Ready condition every 10s for up to 3 minutes (18 attempts).
+  # gcloud run services replace waits for rollout, but there can be a brief
+  # propagation delay before the Ready condition reflects the new revision.
+  # ==========================================================================
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'healthcheck-handler'
+    entrypoint: 'bash'
+    args:
+      - '-euo'
+      - 'pipefail'
+      - '-c'
+      - |
+        echo "Verifying ${_HANDLER_SERVICE_NAME} is healthy..."
+        for i in $$(seq 1 18); do
+          READY=$$(gcloud run services describe ${_HANDLER_SERVICE_NAME} \
+              --region=${_REGION} \
+              --project=${PROJECT_ID} \
+              --format=json | python3 << 'PYEOF'
+        import json, sys
+        svc = json.load(sys.stdin)
+        for c in svc.get("status", {}).get("conditions", []):
+            if c["type"] == "Ready":
+                print(c["status"])
+                sys.exit(0)
+        print("Unknown")
+        PYEOF
+          )
+          if [ "$$READY" = "True" ]; then
+            echo "${_HANDLER_SERVICE_NAME} is healthy and serving traffic."
+            exit 0
+          fi
+          echo "  Attempt $$i/18: status=$$READY, retrying in 10s..."
+          sleep 10
+        done
+        echo "ERROR: ${_HANDLER_SERVICE_NAME} failed to become healthy within 3 minutes"
+        gcloud run services describe ${_HANDLER_SERVICE_NAME} \
+            --region=${_REGION} --project=${PROJECT_ID} \
+            --format='yaml(status.conditions)'
+        exit 1
+    waitFor: ['deploy-handler']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'healthcheck-agent'
+    entrypoint: 'bash'
+    args:
+      - '-euo'
+      - 'pipefail'
+      - '-c'
+      - |
+        echo "Verifying ${_SERVICE_NAME} is healthy..."
+        for i in $$(seq 1 18); do
+          READY=$$(gcloud run services describe ${_SERVICE_NAME} \
+              --region=${_REGION} \
+              --project=${PROJECT_ID} \
+              --format=json | python3 << 'PYEOF'
+        import json, sys
+        svc = json.load(sys.stdin)
+        for c in svc.get("status", {}).get("conditions", []):
+            if c["type"] == "Ready":
+                print(c["status"])
+                sys.exit(0)
+        print("Unknown")
+        PYEOF
+          )
+          if [ "$$READY" = "True" ]; then
+            echo "${_SERVICE_NAME} is healthy and serving traffic."
+            exit 0
+          fi
+          echo "  Attempt $$i/18: status=$$READY, retrying in 10s..."
+          sleep 10
+        done
+        echo "ERROR: ${_SERVICE_NAME} failed to become healthy within 3 minutes"
+        gcloud run services describe ${_SERVICE_NAME} \
+            --region=${_REGION} --project=${PROJECT_ID} \
+            --format='yaml(status.conditions)'
+        exit 1
+    waitFor: ['deploy-agent']
+
+  # ==========================================================================
   # GCLB PHASE - Set up per-service Google Cloud Load Balancers
   # Creates static IP, SSL cert, NEG, backend, Cloud Armor, URL map,
   # HTTPS proxy, and forwarding rule for each enabled service.
@@ -307,7 +388,7 @@ steps:
             agent "${_SERVICE_NAME}" "${_AGENT_DOMAIN_NAME}" \
             "${_ENABLE_CLOUD_ARMOR_AGENT}" "${_REGION}" "${PROJECT_ID}" "${_LB_NAME}" \
             "${_CLOUD_ARMOR_SENSITIVITY_AGENT}"
-    waitFor: ['deploy-agent', 'validate-lb-config']
+    waitFor: ['healthcheck-agent', 'validate-lb-config']
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'setup-lb-handler'
@@ -325,7 +406,7 @@ steps:
             handler "${_HANDLER_SERVICE_NAME}" "${_HANDLER_DOMAIN_NAME}" \
             "${_ENABLE_CLOUD_ARMOR_HANDLER}" "${_REGION}" "${PROJECT_ID}" "${_LB_NAME}" \
             "${_CLOUD_ARMOR_SENSITIVITY_HANDLER}"
-    waitFor: ['deploy-handler', 'validate-lb-config']
+    waitFor: ['healthcheck-handler', 'validate-lb-config']
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'configure-ingress'
@@ -397,8 +478,8 @@ steps:
             --format='value(status.url)')
 
         if [ -z "$$HANDLER_URL" ]; then
-          echo "WARNING: Could not get handler URL, skipping Pub/Sub configuration"
-          exit 0
+          echo "ERROR: Could not get handler URL — Pub/Sub configuration requires a running handler"
+          exit 1
         fi
 
         PUSH_ENDPOINT="$$HANDLER_URL/pubsub"
@@ -459,7 +540,7 @@ steps:
         echo "  Push endpoint: $$PUSH_ENDPOINT"
         echo "  Audience: $$PUSH_ENDPOINT"
         echo "  Auth SA: $$INVOKER_SA"
-    waitFor: ['deploy-handler']
+    waitFor: ['healthcheck-handler']
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'update-agent-urls'
