@@ -190,9 +190,9 @@ The MCP server provides these tools to the agent:
 | `advisor__get_rule_from_node_id` | Get rule by node ID |
 | `advisor__get_rule_details` | Get details of a specific rule |
 | `advisor__get_hosts_hitting_a_rule` | Get hosts affected by a rule |
-| `advisor__get_hosts_details_hitting_a_rule` | Get detailed host info for a rule |
+| `advisor__get_hosts_details_for_rule` | Get detailed host info for a rule |
 | `advisor__get_rule_by_text_search` | Search rules by text |
-| `advisor__get_recommendations_statistics` | Get recommendation statistics |
+| `advisor__get_recommendations_stats` | Get recommendation statistics |
 
 ### Inventory Tools
 
@@ -220,7 +220,7 @@ The MCP server provides these tools to the agent:
 
 | Tool | Description |
 |------|-------------|
-| `remediations__create_vulnerability_playbook` | Create vulnerability remediation playbook (if not read-only) |
+| `remediations__create_vuln_playbook` | Create vulnerability remediation playbook (if not read-only) |
 
 ### Planning Tools
 
@@ -229,7 +229,9 @@ The MCP server provides these tools to the agent:
 | `planning__get_upcoming_changes` | Get upcoming changes |
 | `planning__get_appstreams_lifecycle` | Get AppStreams lifecycle info |
 | `planning__get_rhel_lifecycle` | Get RHEL lifecycle info |
-| `planning__get_relevant_upcoming_changes` | Get relevant upcoming changes |
+| `planning__get_relevant_upcoming` | Get relevant upcoming changes |
+| `planning__get_relevant_appstreams` | Get relevant AppStreams lifecycle info |
+| `planning__get_relevant_rhel_lifecycle` | Get relevant RHEL lifecycle info |
 
 ### Image Builder Tools
 
