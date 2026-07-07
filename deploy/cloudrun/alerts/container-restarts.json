@@ -1,0 +1,30 @@
+{
+  "displayName": "Lightspeed — Container Restarts",
+  "documentation": {
+    "content": "A Cloud Run container exited unexpectedly and was restarted.\n\nThis alert fires when any container in the lightspeed-agent or marketplace-handler services exits with a non-zero code or is killed (e.g., OOMKilled, liveness probe failure).\n\n**Triage steps:**\n1. Check Cloud Run logs for the affected service — filter by severity=ERROR around the alert timestamp.\n2. Look for OOMKilled indicators (memory limit exceeded) or application stack traces.\n3. If the agent's MCP sidecar is restarting, verify the MCP server is reachable.\n4. Check the Cloud Run Metrics tab for memory/CPU utilization trends leading up to the restart.",
+    "mimeType": "text/markdown"
+  },
+  "conditions": [
+    {
+      "displayName": "Container restarted",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_revision\"\nresource.labels.service_name=(\"lightspeed-agent\" OR \"marketplace-handler\")\nseverity>=ERROR\ntextPayload=~\"Container called exit|Terminated|OOMKilled|container exited\"",
+        "labelExtractors": {
+          "service_name": "EXTRACT(resource.labels.service_name)"
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "300s"
+    },
+    "autoClose": "1800s"
+  },
+  "combiner": "OR",
+  "enabled": true,
+  "severity": "WARNING",
+  "labels": {
+    "lightspeed-agent": ""
+  }
+}

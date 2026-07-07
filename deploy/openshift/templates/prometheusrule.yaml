@@ -1,0 +1,34 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "lightspeed-agent.fullname" . }}
+  {{- if .Values.monitoring.prometheusRule.namespace }}
+  namespace: {{ .Values.monitoring.prometheusRule.namespace }}
+  {{- end }}
+  labels:
+    {{- include "lightspeed-agent.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: lightspeed-agent.container-restarts
+      rules:
+        - alert: ContainerRestarts
+          expr: |
+            increase(
+              kube_pod_container_status_restarts_total{
+                namespace="{{ .Release.Namespace }}",
+                container=~"lightspeed-agent|lightspeed-mcp|marketplace-handler"
+              }[15m]
+            ) > 0
+          for: 0m
+          labels:
+            severity: warning
+            app: lightspeed-agent
+          annotations:
+            summary: >-
+              Container {{`{{ $labels.container }}`}} in pod {{`{{ $labels.pod }}`}} restarted
+            description: >-
+              Container {{`{{ $labels.container }}`}} in pod {{`{{ $labels.pod }}`}}
+              (namespace {{`{{ $labels.namespace }}`}}) has restarted
+              {{`{{ $value }}`}} time(s) in the last 15 minutes.
+{{- end }}

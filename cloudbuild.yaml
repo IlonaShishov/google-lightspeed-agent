@@ -9,8 +9,9 @@
 #   1. marketplace-handler - Handles DCR and Pub/Sub events (always running)
 #   2. lightspeed-agent    - A2A agent with MCP sidecar (always running)
 #
-# After deployment, Cloud Monitoring dashboards are created/updated from
-# JSON files in deploy/cloudrun/dashboards/ (requires roles/monitoring.dashboardEditor).
+# After deployment, Cloud Monitoring dashboards and alert policies are
+# created/updated from JSON files in deploy/cloudrun/dashboards/ and
+# deploy/cloudrun/alerts/ respectively.
 #
 # Prerequisites:
 #   - Run deploy/cloudrun/setup.sh first to configure GCP services,
@@ -24,6 +25,7 @@
 #   - roles/pubsub.editor (create/update subscriptions — broader than needed;
 #     a custom role scoped to the marketplace subscription is recommended for production)
 #   - roles/monitoring.dashboardEditor (create/update Cloud Monitoring dashboards)
+#   - roles/monitoring.alertPolicyEditor (create/update Cloud Monitoring alert policies)
 #   - roles/compute.admin (create GCLB resources, Cloud Armor policies — only needed
 #     when GCLB is enabled; a custom role with only LB/NEG/cert/security-policy
 #     permissions is recommended for production)
@@ -603,12 +605,13 @@ steps:
     waitFor: ['configure-ingress']
 
   # ==========================================================================
-  # DASHBOARDS PHASE - Create or update Cloud Monitoring dashboards
-  # Auto-discovers all JSON files in deploy/cloudrun/dashboards/.
-  # After this initial setup, adding a new dashboard only requires
-  # dropping a JSON file in that directory — no further cloudbuild.yaml edits.
-  # Requires roles/monitoring.dashboardEditor on the Cloud Build SA.
+  # MONITORING PHASE - Dashboards and alert policies
   # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Dashboards — auto-discovers JSON files in deploy/cloudrun/dashboards/.
+  # Requires roles/monitoring.dashboardEditor on the Cloud Build SA.
+  # --------------------------------------------------------------------------
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-dashboards'
@@ -638,6 +641,40 @@ steps:
         done
         echo "Dashboard deployment complete."
     waitFor: ['deploy-agent', 'deploy-handler']
+
+  # --------------------------------------------------------------------------
+  # Alert policies — auto-discovers JSON files in deploy/cloudrun/alerts/.
+  # Requires roles/monitoring.alertPolicyEditor on the Cloud Build SA.
+  # --------------------------------------------------------------------------
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-alerts'
+    entrypoint: 'bash'
+    args:
+      - '-euo'
+      - 'pipefail'
+      - '-c'
+      - |
+        for f in deploy/cloudrun/alerts/*.json; do
+          [ -f "$$f" ] || continue
+          name=$$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['displayName'])" "$$f")
+          echo "Processing alert policy: $$name"
+          existing=$$(gcloud alpha monitoring policies list \
+              --project=${PROJECT_ID} \
+              --format='value(name)' \
+              --filter="displayName=\"$$name\"" 2>/dev/null | head -1)
+          if [ -n "$$existing" ]; then
+            echo "  Replacing existing policy: $$existing"
+            gcloud alpha monitoring policies delete "$$existing" \
+                --project=${PROJECT_ID} --quiet
+          fi
+          echo "  Creating alert policy: $$name"
+          gcloud alpha monitoring policies create \
+              --policy-from-file="$$f" \
+              --project=${PROJECT_ID}
+        done
+        echo "Alert policy deployment complete."
+    waitFor: ['deploy-dashboards']
 
 images:
   - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${_IMAGE_TAG}'

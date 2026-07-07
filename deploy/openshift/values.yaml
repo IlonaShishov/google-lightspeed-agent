@@ -201,6 +201,10 @@ monitoring:
     interval: 60s
     # Namespace for the ServiceMonitor — empty = release namespace
     namespace: ""
+  prometheusRule:
+    enabled: false
+    # Namespace for the PrometheusRule CR — empty = release namespace
+    namespace: ""
   grafanaDashboard:
     enabled: false
     # Grafana datasource UID — must match the uid in your GrafanaDatasource CR
