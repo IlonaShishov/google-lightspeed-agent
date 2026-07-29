@@ -77,13 +77,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import mlflow
+from mlflow.genai.datasets import create_dataset, get_dataset
 from mlflow.genai.scorers import (
     Correctness,
     ExpectationsGuidelines,
     Guidelines,
     RelevanceToQuery,
 )
-
 
 SCRIPT_DIR = Path(__file__).parent
 DATASET_PATH = SCRIPT_DIR / "dataset.json"
@@ -229,6 +229,35 @@ def make_predict_fn(agent_url: str, token: str, timeout: int):
 
 
 
+def _upload_dataset(local_path: Path, dataset_name: str) -> None:
+    """Upload local dataset JSON to the MLflow server as a registered dataset."""
+    raw = load_dataset(local_path)
+    records = format_for_mlflow(raw)
+    try:
+        ds = get_dataset(name=dataset_name)
+        print(f"Found existing dataset '{dataset_name}', merging {len(records)} records...")
+    except Exception:
+        ds = create_dataset(name=dataset_name)
+        print(f"Created new dataset '{dataset_name}', uploading {len(records)} records...")
+    ds.merge_records(records)
+    print(f"Done. Dataset '{dataset_name}' now has {len(ds.to_df())} records.")
+
+
+def _load_eval_data(dataset_name: str, local_path: Path):
+    """Load evaluation data from MLflow server, falling back to local JSON."""
+    try:
+        ds = get_dataset(name=dataset_name)
+        n = len(ds.to_df())
+        print(f"Using registered dataset '{dataset_name}' ({n} records)")
+        return ds
+    except Exception:
+        print(f"Dataset '{dataset_name}' not found on server, using local {local_path}")
+        raw = load_dataset(local_path)
+        mlflow_data = format_for_mlflow(raw)
+        print(f"Loaded {len(raw)} evaluation questions from {local_path}")
+        return mlflow_data
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run MLflow evaluation against a deployed Lightspeed Agent"
@@ -250,7 +279,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--experiment",
-        default="lightspeed-agent-evals",
+        default="lightspeed-agent-eval",
         help="MLflow experiment name for evaluation results",
     )
     parser.add_argument(
@@ -263,23 +292,34 @@ def main() -> None:
         "--dataset",
         type=Path,
         default=DATASET_PATH,
-        help="Path to evaluation dataset JSON",
+        help="Path to local dataset JSON (used with --upload-dataset or as fallback)",
+    )
+    parser.add_argument(
+        "--dataset-name",
+        default="lightspeed-agent-eval",
+        help="Name of the registered MLflow dataset (default: lightspeed-agent-eval)",
+    )
+    parser.add_argument(
+        "--upload-dataset",
+        action="store_true",
+        help="Upload local dataset JSON to MLflow server and exit (one-time setup)",
     )
     args = parser.parse_args()
 
-    if not args.token:
-        print("ERROR: --token required (or set EVAL_AGENT_TOKEN)", file=sys.stderr)
-        sys.exit(1)
+    if not args.upload_dataset:
+        if not args.token:
+            print("ERROR: --token required (or set EVAL_AGENT_TOKEN)", file=sys.stderr)
+            sys.exit(1)
 
-    judge_model = os.environ.get("MLFLOW_GENAI_JUDGE_DEFAULT_MODEL", "")
-    if not judge_model:
-        print(
-            "ERROR: MLFLOW_GENAI_JUDGE_DEFAULT_MODEL is not set. "
-            "A self-hosted judge model is required to prevent evaluation data "
-            "from being sent to external cloud providers.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        judge_model = os.environ.get("MLFLOW_GENAI_JUDGE_DEFAULT_MODEL", "")
+        if not judge_model:
+            print(
+                "ERROR: MLFLOW_GENAI_JUDGE_DEFAULT_MODEL is not set. "
+                "A self-hosted judge model is required to prevent evaluation data "
+                "from being sent to external cloud providers.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     if os.environ.get("MLFLOW_TRACKING_INSECURE_TLS", "").lower() == "true":
         import requests.adapters
@@ -291,19 +331,22 @@ def main() -> None:
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    dataset = load_dataset(args.dataset)
-    mlflow_data = format_for_mlflow(dataset)
-    print(f"Loaded {len(dataset)} evaluation questions from {args.dataset}")
-
     mlflow.set_tracking_uri(args.mlflow_uri)
     mlflow.set_experiment(args.experiment)
     print(f"MLflow tracking: {args.mlflow_uri}")
     print(f"MLflow experiment: {args.experiment}")
-    if judge_model:
-        print(f"Judge model: {judge_model}")
+
+    if args.upload_dataset:
+        _upload_dataset(args.dataset, args.dataset_name)
+        return
+
+    eval_data = _load_eval_data(args.dataset_name, args.dataset)
+
+    print(f"Judge model: {os.environ.get('MLFLOW_GENAI_JUDGE_DEFAULT_MODEL', '')}")
 
     predict_fn, set_total = make_predict_fn(args.agent_url, args.token, args.timeout)
-    set_total(len(dataset))
+    n_questions = len(eval_data.to_df()) if hasattr(eval_data, "to_df") else len(eval_data)
+    set_total(n_questions)
 
     scorers = [
         Correctness(),
@@ -313,10 +356,10 @@ def main() -> None:
         ExpectationsGuidelines(),
     ]
 
-    print(f"\nStarting evaluation ({len(dataset)} questions, {len(scorers)} scorers)...\n")
+    print(f"\nStarting evaluation ({n_questions} questions, {len(scorers)} scorers)...\n")
 
     results = mlflow.genai.evaluate(
-        data=mlflow_data,
+        data=eval_data,
         predict_fn=predict_fn,
         scorers=scorers,
     )

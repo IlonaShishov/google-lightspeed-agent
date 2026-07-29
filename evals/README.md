@@ -20,7 +20,7 @@ Developer laptop (on VPN)
 2. Send each question to the agent's A2A endpoint with a Bearer token
 3. Collect the agent's text response
 4. Run MLflow scorers against each response
-5. Log results to the MLflow `lightspeed-agent-evals` experiment
+5. Log results to the MLflow `lightspeed-agent-eval` experiment
 
 ## Prerequisites
 
@@ -74,6 +74,31 @@ export REQUESTS_CA_BUNDLE=/tmp/ca-bundle.crt
 
 If the agent and judge endpoints are on different clusters, concatenate both CA certs into a single bundle file.
 
+## Dataset Management
+
+Evaluation questions can be stored as a **registered dataset on the MLflow server** or as a local JSON file. The registered dataset is the default — it lives on the server, is editable from the MLflow UI, and is shared across the team.
+
+### Upload dataset to MLflow (one-time setup)
+
+Seed the MLflow server with questions from `dataset.json`:
+
+```bash
+python evals/run_eval.py \
+    --upload-dataset \
+    --mlflow-uri https://mlflow-<namespace>.apps.<cluster>/
+```
+
+This creates a registered dataset named `lightspeed-agent-eval` on the server. Run it again to merge new questions from an updated `dataset.json` — existing records are preserved.
+
+After uploading, the dataset appears in the MLflow UI under the **Datasets** tab where records can be viewed, edited, and tagged.
+
+### How data is loaded at eval time
+
+1. The script tries to load the registered dataset from the MLflow server by name
+2. If the dataset is not found, it falls back to the local `dataset.json` file
+
+No extra flags needed — just run the eval and it picks up the registered dataset automatically.
+
 ## Usage
 
 ```bash
@@ -92,9 +117,11 @@ Use `python -u` for unbuffered output to see progress in real time.
 | `--agent-url` | `EVAL_AGENT_URL` | `http://localhost:8000` | Agent A2A endpoint |
 | `--token` | `EVAL_AGENT_TOKEN` | (required) | Bearer token for authentication |
 | `--mlflow-uri` | `MLFLOW_TRACKING_URI` | `http://localhost:5000` | MLflow tracking server |
-| `--experiment` | | `lightspeed-agent-evals` | MLflow experiment name |
+| `--experiment` | | `lightspeed-agent-eval` | MLflow experiment name |
 | `--timeout` | | `180` | Timeout per question (seconds) |
-| `--dataset` | | `evals/dataset.json` | Path to dataset file |
+| `--dataset` | | `evals/dataset.json` | Local dataset JSON (fallback or upload source) |
+| `--dataset-name` | | `lightspeed-agent-eval` | Name of the registered MLflow dataset |
+| `--upload-dataset` | | | Upload local JSON to MLflow server and exit |
 
 ## Scorers
 
@@ -151,4 +178,4 @@ Add entries to `dataset.json` following the same schema. Questions are defined i
 
 ## Viewing Results
 
-Results are logged to the MLflow `lightspeed-agent-evals` experiment. Open the MLflow UI and navigate to the experiment to see per-question scores, compare evaluation runs, and drill into individual results.
+Results are logged to the MLflow `lightspeed-agent-eval` experiment. Open the MLflow UI and navigate to the experiment to see per-question scores, compare evaluation runs, and drill into individual results.
