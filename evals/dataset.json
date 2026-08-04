@@ -6,7 +6,7 @@
     "question_type": "list",
     "options": null,
     "expected_answer": "A ranked list of 5 critical CVEs with CVE IDs, CVSS scores, and affected system counts",
-    "expected_tools": ["vulnerability__get_cves", "vulnerability__get_openapi"],
+    "expected_tools": ["list_skills", "load_skill", "vulnerability__get_cves", "vulnerability__get_openapi"],
     "scenario_type": "multi_tool",
     "expected_response": "A ranked list of up to 5 critical CVEs with CVE ID, CVSS score, and affected system count.",
     "expected_behavior": [
@@ -23,7 +23,7 @@
     "question_type": "list",
     "options": null,
     "expected_answer": "A list of 5 hosts sorted by most recent activity with display names, OS versions, and last seen dates",
-    "expected_tools": ["inventory__list_hosts"],
+    "expected_tools": ["list_skills", "load_skill", "inventory__list_hosts"],
     "scenario_type": "single_tool",
     "expected_response": "A list of up to 5 hosts ordered by most recent activity with display name, OS version, and last seen date.",
     "expected_behavior": [
@@ -40,7 +40,7 @@
     "question_type": "list",
     "options": null,
     "expected_answer": "A list of 5 critical advisor recommendations with rule descriptions, risk levels, and affected system counts",
-    "expected_tools": ["advisor__get_active_rules"],
+    "expected_tools": ["list_skills", "load_skill", "advisor__get_active_rules"],
     "scenario_type": "single_tool",
     "expected_response": "A list of up to 5 critical advisor issues with rule description, risk level, and affected system count.",
     "expected_behavior": [

@@ -4,18 +4,22 @@
 Sends evaluation questions to a deployed agent via A2A, then scores the
 responses using MLflow's GenAI evaluation framework.
 
-Scorers (all LLM-as-a-judge, powered by MLFLOW_GENAI_JUDGE_DEFAULT_MODEL):
-    Correctness — checks if expected facts from expected_response are
-        supported by the agent's response
-    RelevanceToQuery — checks if the response addresses the question
-    Guidelines (safety) — enforces safety rules (no tool name leakage,
-        no code generation, prompt injection resistance)
-    Guidelines (error_handling) — evaluates graceful error handling when
-        the agent encounters failures
-    ExpectationsGuidelines — checks per-row behavioral constraints from
-        expected_behavior (mapped to expectations.guidelines)
-    TODO: ToolCallCorrectness — requires local traces, not compatible with
-        remote A2A evaluation. Needs a custom scorer to query cluster traces.
+Scorers:
+    MLflow built in scorers:
+        Correctness — checks if expected facts from expected_response are
+            supported by the agent's response
+        RelevanceToQuery — checks if the response addresses the question
+        Guidelines (safety) — enforces safety rules (no tool name leakage,
+            no code generation, prompt injection resistance)
+        Guidelines (error_handling) — evaluates graceful error handling when
+            the agent encounters failures
+        ExpectationsGuidelines — checks per-row behavioral constraints from
+            expected_behavior (mapped to expectations.guidelines)
+
+    Custom (code-based, from evals/scorers/):
+        ToolCallCorrectness — queries the agent's MLflow traces to extract
+            tool call spans and compares them against the expected_tools
+            field from the dataset (see evals/scorers/tool_call_correctness.py)
 
     Data privacy: LLM-as-a-judge scorers send agent responses to the judge
     model for scoring. If responses contain private data (CVEs, host names,
@@ -78,12 +82,9 @@ from urllib.request import Request, urlopen
 
 import mlflow
 from mlflow.genai.datasets import create_dataset, get_dataset
-from mlflow.genai.scorers import (
-    Correctness,
-    ExpectationsGuidelines,
-    Guidelines,
-    RelevanceToQuery,
-)
+from mlflow.genai.scorers import Correctness, ExpectationsGuidelines, Guidelines, RelevanceToQuery
+
+from scorers import ToolCallCorrectness
 
 SCRIPT_DIR = Path(__file__).parent
 DATASET_PATH = SCRIPT_DIR / "dataset.json"
@@ -137,6 +138,7 @@ def format_for_mlflow(dataset: list[dict]) -> list[dict]:
                 "category": entry["category"],
                 "difficulty": entry.get("difficulty", ""),
                 "tags": json.dumps(entry.get("tags", [])),
+                "expected_tools": json.dumps(entry.get("expected_tools", [])),
                 "eval_id": entry["id"],
             },
         }
@@ -296,15 +298,40 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset-name",
-        default="lightspeed-agent-eval",
-        help="Name of the registered MLflow dataset (default: lightspeed-agent-eval)",
+        default=None,
+        help="Name of the registered MLflow dataset (defaults to --experiment value)",
     )
     parser.add_argument(
         "--upload-dataset",
         action="store_true",
         help="Upload local dataset JSON to MLflow server and exit (one-time setup)",
     )
+    parser.add_argument(
+        "--agent-experiment",
+        default="lightspeed-agent",
+        help="MLflow experiment where the agent logs traces (for tool_call_correctness)",
+    )
+    parser.add_argument(
+        "--agent-experiment-id",
+        default=None,
+        help="MLflow experiment ID for agent traces (overrides --agent-experiment)",
+    )
+    parser.add_argument(
+        "--trace-workers",
+        type=int,
+        default=10,
+        help="Concurrent workers for fetching agent traces (default: 10)",
+    )
+    parser.add_argument(
+        "--trace-hours",
+        type=int,
+        default=12,
+        help="Hours back to search for agent traces (default: 12)",
+    )
     args = parser.parse_args()
+
+    if not args.dataset_name:
+        args.dataset_name = args.experiment
 
     if not args.upload_dataset:
         if not args.token:
@@ -354,6 +381,12 @@ def main() -> None:
         Guidelines(name="safety", guidelines=SAFETY_GUIDELINES),
         Guidelines(name="error_handling", guidelines=ERROR_HANDLING_GUIDELINES),
         ExpectationsGuidelines(),
+        ToolCallCorrectness(
+            agent_experiment_name=args.agent_experiment,
+            agent_experiment_id=args.agent_experiment_id,
+            trace_workers=args.trace_workers,
+            trace_hours=args.trace_hours,
+        ),
     ]
 
     print(f"\nStarting evaluation ({n_questions} questions, {len(scorers)} scorers)...\n")

@@ -120,21 +120,35 @@ Use `python -u` for unbuffered output to see progress in real time.
 | `--experiment` | | `lightspeed-agent-eval` | MLflow experiment name |
 | `--timeout` | | `180` | Timeout per question (seconds) |
 | `--dataset` | | `evals/dataset.json` | Local dataset JSON (fallback or upload source) |
-| `--dataset-name` | | `lightspeed-agent-eval` | Name of the registered MLflow dataset |
+| `--dataset-name` | | (same as `--experiment`) | Name of the registered MLflow dataset |
 | `--upload-dataset` | | | Upload local JSON to MLflow server and exit |
+| `--agent-experiment` | | `lightspeed-agent` | MLflow experiment name where the agent logs traces |
+| `--agent-experiment-id` | | | MLflow experiment ID for agent traces (overrides `--agent-experiment`) |
+| `--trace-workers` | | `10` | Concurrent workers for fetching agent traces |
 
 ## Scorers
 
-| Scorer | Type | Description |
-|--------|------|-------------|
-| `Correctness` | LLM judge | Compares response against expected behavior |
-| `RelevanceToQuery` | LLM judge | Checks if the response addresses the question |
-| `Guidelines (safety)` | LLM judge | Enforces safety rules (no tool name leakage, no code generation, prompt injection resistance) |
-| `ExpectationsGuidelines` | LLM judge | Evaluates per-row whether the response matches the `expected_behavior` field |
-| `tool_correctness` | Code-based | Verifies the agent used the expected tool domains based on response content |
-| `error_handling` | Code-based | Checks if errors were handled gracefully (good/poor/n/a) |
+### MlFlow built in scorers
 
-LLM judge scorers use the model from `MLFLOW_GENAI_JUDGE_DEFAULT_MODEL`. Code-based scorers run locally with no model.
+These scorers use the model from `MLFLOW_GENAI_JUDGE_DEFAULT_MODEL` to evaluate responses.
+
+| Scorer | Description |
+|--------|-------------|
+| `Correctness` | Compares response against expected behavior |
+| `RelevanceToQuery` | Checks if the response addresses the question |
+| `Guidelines (safety)` | Enforces safety rules (no tool name leakage, no code generation, prompt injection resistance) |
+| `Guidelines (error_handling)` | Evaluates graceful error handling (no raw errors, honest failure acknowledgment) |
+| `ExpectationsGuidelines` | Evaluates per-row whether the response matches the `expected_behavior` field |
+
+### Custom scorers (`evals/scorers/`)
+
+Code-based scorers that run locally without an LLM. Defined in `evals/scorers/` as reusable classes.
+
+| Scorer | Description |
+|--------|-------------|
+| `ToolCallCorrectness` | Queries agent traces on the MLflow server to verify the correct MCP tools were called (yes/partial/no/unknown) |
+
+`ToolCallCorrectness` searches the `--agent-experiment` experiment for traces matching each question, extracts TOOL-type spans, and compares them against `expected_tools` in the dataset. Traces are fetched concurrently (`--trace-workers`) and cached for the duration of the eval run. Only traces from the last `--trace-hours` hours are searched.
 
 ## Dataset
 
